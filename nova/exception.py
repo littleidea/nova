@@ -962,3 +962,7 @@ class AggregateHostExists(Duplicate):
 
 class DuplicateSfVolumeNames(Duplicate):
     message = _("Detected more than one volume with name %(vol_name)")
+
+class DuplicateVlan(Duplicate):
+    message = _("Detected existing vlan with id %(vlan)")
+
