@@ -1981,12 +1981,10 @@ def network_count_reserved_ips(context, network_id):
                     filter_by(reserved=True).\
                     count()
 
-
 @require_admin_context
 def network_create_safe(context, values):
     if values.get('vlan'):
-        networks = model_query(context, models.Network, read_deleted="no").all()
-        if values['vlan'] in [network.vlan for network in networks]:
+        if model_query(context, models.Network, read_deleted="no").filter_by(vlan=vlan).first():
             raise exception.DuplicateVlan(vlan=values['vlan'])
 
     network_ref = models.Network()
