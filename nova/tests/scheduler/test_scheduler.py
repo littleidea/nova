@@ -33,6 +33,7 @@ from nova import rpc
 from nova.rpc import common as rpc_common
 from nova.scheduler import driver
 from nova.scheduler import manager
+from nova.notifier import api as notifier
 from nova import test
 from nova.tests.scheduler import fakes
 from nova import utils
@@ -212,6 +213,82 @@ class SchedulerManagerTestCase(test.TestCase):
 
         self.mox.ReplayAll()
         self.manager.run_instance(self.context, self.topic,
+                *self.fake_args, **self.fake_kwargs)
+
+
+    def test_prep_resize_no_valid_host_back_in_active_state(self):
+        """Test that a NoValidHost exception for prep_resize puts
+        the instance in ACTIVE state
+        """
+
+        fake_instance_uuid = 'fake-instance-id'
+
+        # Make sure the method exists that we're going to test call
+        def stub_method(*args, **kwargs):
+            pass
+
+        setattr(self.manager.driver, 'schedule_prep_resize', stub_method)
+
+        self.mox.StubOutWithMock(self.manager.driver,
+                'schedule_prep_resize')
+        self.mox.StubOutWithMock(db, 'instance_update')
+
+        request_spec = {'instance_properties':
+                {'uuid': fake_instance_uuid}}
+        self.fake_kwargs['request_spec'] = request_spec
+
+        self.manager.driver.schedule_prep_resize(self.context,
+                *self.fake_args, **self.fake_kwargs).AndRaise(
+                        exception.NoValidHost(reason=""))
+        db.instance_update(self.context, fake_instance_uuid,
+                {'vm_state': vm_states.ACTIVE})
+
+        self.mox.ReplayAll()
+        self.manager.prep_resize(self.context, self.topic,
+                *self.fake_args, **self.fake_kwargs)
+
+    def test_prep_resize_no_valid_host_notifies(self):
+        """Test that a NoValidHost exception for prep_resize sends
+        a notification
+        """
+
+        fake_instance_uuid = 'fake-instance-id'
+
+        # Make sure the method exists that we're going to test call
+        def stub_method(*args, **kwargs):
+            pass
+
+        setattr(self.manager.driver, 'schedule_prep_resize', stub_method)
+
+        self.mox.StubOutWithMock(self.manager.driver,
+                'schedule_prep_resize')
+        self.mox.StubOutWithMock(db, 'instance_update')
+        self.mox.StubOutWithMock(notifier, 'notify')
+
+
+        request_spec = {'instance_properties':
+                {'uuid': fake_instance_uuid}}
+        properties = request_spec.get('instance_properties', {})
+        self.fake_kwargs['request_spec'] = request_spec
+
+        self.manager.driver.schedule_prep_resize(self.context,
+                *self.fake_args, **self.fake_kwargs).AndRaise(
+                        exception.NoValidHost(reason=""))
+        db.instance_update(self.context, fake_instance_uuid,
+                {'vm_state': vm_states.ACTIVE})
+
+        payload = dict(request_spec=request_spec,
+                       instance_properties=properties,
+                       instance_id=fake_instance_uuid,
+                       state=vm_states.ACTIVE,
+                       method='prep_resize',
+                       reason=exception.NoValidHost(reason=""))
+        notifier.notify(notifier.publisher_id("scheduler"),
+                        'scheduler.prep_resize' , notifier.ERROR, payload)
+
+
+        self.mox.ReplayAll()
+        self.manager.prep_resize(self.context, self.topic,
                 *self.fake_args, **self.fake_kwargs)
 
 
