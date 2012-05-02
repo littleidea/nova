@@ -276,7 +276,7 @@ def setup_container(image, container_dir=None, use_cow=False):
         LOG.exception(_('Failed to mount filesystem: %s'), exn)
 
 
-def destroy_container(img):
+def destroy_container(image, container_dir=None, use_cow=False):
     """Destroy the container once it terminates.
 
     It will umount the container that is mounted,
@@ -285,8 +285,8 @@ def destroy_container(img):
     LXC does not support qcow2 images yet.
     """
     try:
-        if img:
-            img.umount()
+        img = _DiskImage(image=image, use_cow=use_cow, mount_dir=container_dir)
+        img.umount()
     except Exception, exn:
         LOG.exception(_('Failed to remove container: %s'), exn)
 

@@ -222,7 +222,6 @@ class LibvirtConnection(driver.ComputeDriver):
         self._host_state = None
         self._initiator = None
         self._wrapped_conn = None
-        self.container = None
         self.read_only = read_only
         if FLAGS.firewall_driver not in firewall.drivers:
             FLAGS.set_default('firewall_driver', firewall.drivers[0])
@@ -475,7 +474,9 @@ class LibvirtConnection(driver.ComputeDriver):
         LOG.info(_('Deleting instance files %(target)s') % locals(),
                  instance=instance)
         if FLAGS.libvirt_type == 'lxc':
-            disk.destroy_container(self.container)
+            disk.destroy_container(os.path.join(target, 'disk'),
+                                   container_dir=self.lxc_rootfs(instance['name']),
+                                   use_cow=FLAGS.use_cow_images)
         if os.path.exists(target):
             shutil.rmtree(target)
 
@@ -610,6 +611,12 @@ class LibvirtConnection(driver.ComputeDriver):
         for device in dom.getElementsByTagName('target'):
             filesystem = device.getAttribute('dev')
             return 'dev/%s' % filesystem
+
+    @staticmethod
+    def lxc_rootfs(instance_name):
+        return os.path.join(FLAGS.instances_path,
+                            instance_name,
+                            "rootfs")
 
     @exception.wrap_exception()
     def snapshot(self, context, instance, image_href):
@@ -1171,10 +1178,6 @@ class LibvirtConnection(driver.ComputeDriver):
         LOG.info(_('Creating image'), instance=instance)
         libvirt_utils.write_to_file(basepath('libvirt.xml'), libvirt_xml)
 
-        if FLAGS.libvirt_type == 'lxc':
-            container_dir = '%s/rootfs' % basepath(suffix='')
-            libvirt_utils.ensure_tree(container_dir)
-
         # NOTE(dprince): for rescue console.log may already exist... chown it.
         self._chown_console_log_for_instance(instance['name'])
 
@@ -1367,9 +1370,11 @@ class LibvirtConnection(driver.ComputeDriver):
                          instance=instance)
 
         if FLAGS.libvirt_type == 'lxc':
-            self.container = disk.setup_container(basepath('disk'),
-                                                  container_dir=container_dir,
-                                                  use_cow=FLAGS.use_cow_images)
+            container_dir = self.lxc_rootfs(instance['name'])
+            libvirt_utils.ensure_tree(container_dir)
+            disk.setup_container(basepath('disk'),
+                                 container_dir=container_dir,
+                                 use_cow=FLAGS.use_cow_images)
 
         if FLAGS.libvirt_type == 'uml':
             libvirt_utils.chown(basepath('disk'), 'root')
@@ -1482,9 +1487,8 @@ class LibvirtConnection(driver.ComputeDriver):
         if FLAGS.libvirt_type == "lxc":
             fs = config.LibvirtConfigGuestFilesys()
             fs.type = "mount"
-            fs.source_dir = os.path.join(FLAGS.instances_path,
-                                         instance['name'],
-                                         "rootfs")
+            fs.source_dir = self.lxc_rootfs(instance['name'])
+
             guest.add_device(fs)
         else:
             if FLAGS.use_cow_images:
